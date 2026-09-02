@@ -40,7 +40,7 @@ const DocumentsPage = () => {
           setUploadStatusText('Updating patient timeline...');
         } else if (currentDoc.status === 'consistency_check') {
           setUploadStatusText('Running clinical consistency checks...');
-        } else if (currentDoc.status === 'processed' || currentDoc.status === 'failed') {
+        } else if (currentDoc.status === 'processed' || currentDoc.status === 'completed' || currentDoc.status === 'failed') {
           clearInterval(interval);
           setUploading(false);
           fetchDocuments();
@@ -205,9 +205,9 @@ const DocumentsPage = () => {
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
-                      {doc.status === 'processed' ? (
+                      {doc.status === 'processed' || doc.status === 'completed' ? (
                         <span className="px-3 py-1 bg-success/10 text-success text-xs font-semibold rounded-full flex items-center gap-1">
-                          <CheckCircle2 className="w-4 h-4"/> Processed
+                          <CheckCircle2 className="w-4 h-4"/> Completed
                         </span>
                       ) : doc.status === 'failed' ? (
                         <span className="px-3 py-1 bg-critical/10 text-critical text-xs font-semibold rounded-full flex items-center gap-1">

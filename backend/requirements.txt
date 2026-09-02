@@ -10,3 +10,8 @@ reportlab
 python-dotenv
 pydantic<2.0.0
 email-validator
+PyMuPDF
+pypdf
+pytesseract
+easyocr
+

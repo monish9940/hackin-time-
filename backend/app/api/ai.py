@@ -1,5 +1,7 @@
 import json
 import datetime
+import logging
+import traceback
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from typing import Union
 from app.database import get_db
@@ -9,7 +11,9 @@ from app.auth import get_current_user
 from app.services.ocr import extract_text_from_file
 from app.agents import ExtractionAgent, TimelineAgent, ConsistencyAgent, MissingInfoAgent, PriorityEngine
 
+logger = logging.getLogger("carebridge")
 router = APIRouter()
+
 
 extraction_agent = ExtractionAgent()
 timeline_agent = TimelineAgent()
@@ -21,8 +25,18 @@ async def process_document_pipeline(document_id: Union[int, str], db, user_email
     doc_id = int(document_id) if str(document_id).isdigit() else document_id
     doc = db.documents.find_one({"id": doc_id})
     if not doc:
+        print(f"DOCUMENT PROCESSING FAILED - Document id={doc_id} not found in MongoDB.")
         return
         
+    patient_id = doc["patient_id"]
+    p_id = int(patient_id) if str(patient_id).isdigit() else patient_id
+    
+    print("\n" + "="*60)
+    print("DOCUMENT PROCESSING START")
+    print("DOCUMENT ID:", doc_id)
+    print("PATIENT ID:", p_id)
+    print("="*60)
+    
     try:
         # Step 1: OCR / Text Extraction
         db.documents.update_one({"id": doc_id}, {"$set": {"status": "extracting_text"}})
@@ -42,9 +56,17 @@ async def process_document_pipeline(document_id: Union[int, str], db, user_email
                 "details": f"Failed extraction for {doc.get('file_name')}: {error_msg}",
                 "timestamp": datetime.datetime.utcnow().isoformat()
             })
+            print("OCR EXTRACTION FAILED:", repr(ocr_err))
+            traceback.print_exc()
             return
 
-        db.documents.update_one({"id": doc_id}, {"$set": {"extracted_text": extracted_text}})
+        print("EXTRACTED TEXT LENGTH:", len(extracted_text))
+        print("EXTRACTED TEXT PREVIEW:", extracted_text[:300].replace("\n", " "))
+        
+        db.documents.update_one({"id": doc_id}, {"$set": {
+            "extracted_text": extracted_text,
+            "text": extracted_text
+        }})
         
         db.audit_logs.insert_one({
             "id": get_next_sequence_value(db, "audit_logs"),
@@ -56,7 +78,18 @@ async def process_document_pipeline(document_id: Union[int, str], db, user_email
         
         # Step 2: Extraction Agent
         db.documents.update_one({"id": doc_id}, {"$set": {"status": "ai_extraction"}})
+        print("ENTITY EXTRACTION START")
         structured_data = await extraction_agent.analyze(extracted_text)
+        
+        diagnoses = structured_data.get("diagnoses", [])
+        medications = structured_data.get("medications", [])
+        lab_results = structured_data.get("lab_results", [])
+        allergies = structured_data.get("allergies", [])
+        
+        print("ENTITIES FOUND:", len(diagnoses))
+        print("MEDICATIONS FOUND:", len(medications))
+        print("LAB RESULTS FOUND:", len(lab_results))
+        print("ALLERGIES FOUND:", len(allergies))
         
         update_fields = {"structured_json": json.dumps(structured_data)}
         if structured_data.get("hospital"):
@@ -69,10 +102,8 @@ async def process_document_pipeline(document_id: Union[int, str], db, user_email
         db.documents.update_one({"id": doc_id}, {"$set": update_fields})
         
         # Store extracted medications & lab results into database collections
-        patient_id = doc["patient_id"]
-        p_id = int(patient_id) if str(patient_id).isdigit() else patient_id
-        
-        for med in structured_data.get("medications", []):
+        med_count = 0
+        for med in medications:
             med_name = med.get("name")
             if med_name:
                 db.medications.insert_one({
@@ -87,8 +118,11 @@ async def process_document_pipeline(document_id: Union[int, str], db, user_email
                     "start_date": structured_data.get("date", datetime.date.today().isoformat()),
                     "status": "Active"
                 })
+                med_count += 1
                 
-        for lab in structured_data.get("lab_results", []):
+        print("MEDICATION RECORDS CREATED:", med_count)
+                
+        for lab in lab_results:
             if lab.get("test_name"):
                 db.lab_results.insert_one({
                     "id": get_next_sequence_value(db, "lab_results"),
@@ -99,7 +133,7 @@ async def process_document_pipeline(document_id: Union[int, str], db, user_email
                     "date": structured_data.get("date", datetime.date.today().isoformat())
                 })
 
-        for allergy in structured_data.get("allergies", []):
+        for allergy in allergies:
             if allergy:
                 db.allergies.insert_one({
                     "id": get_next_sequence_value(db, "allergies"),
@@ -119,25 +153,40 @@ async def process_document_pipeline(document_id: Union[int, str], db, user_email
         
         # Step 3: Timeline Agent
         db.documents.update_one({"id": doc_id}, {"$set": {"status": "updating_timeline"}})
-        timeline_agent.analyze_and_update(db, doc["patient_id"], doc_id, structured_data)
+        timeline_before = db.timeline_events.count_documents({"$or": [{"patient_id": p_id}, {"patient_id": str(p_id)}]})
+        timeline_agent.analyze_and_update(db, p_id, doc_id, structured_data)
+        timeline_after = db.timeline_events.count_documents({"$or": [{"patient_id": p_id}, {"patient_id": str(p_id)}]})
+        timeline_count = timeline_after - timeline_before
+        print("TIMELINE EVENTS CREATED:", timeline_count)
         
         # Step 4: Consistency Agent
         db.documents.update_one({"id": doc_id}, {"$set": {"status": "consistency_check"}})
-        await consistency_agent.analyze_and_update(db, doc["patient_id"], doc_id, structured_data)
+        insights_before = db.ai_insights.count_documents({"$or": [{"patient_id": p_id}, {"patient_id": str(p_id)}]})
+        await consistency_agent.analyze_and_update(db, p_id, doc_id, structured_data)
         
         # Step 5: Missing Info Agent
         db.documents.update_one({"id": doc_id}, {"$set": {"status": "missing_info_check"}})
-        await missing_info_agent.analyze_and_update(db, doc["patient_id"], doc_id)
+        await missing_info_agent.analyze_and_update(db, p_id, doc_id)
+        insights_after = db.ai_insights.count_documents({"$or": [{"patient_id": p_id}, {"patient_id": str(p_id)}]})
+        insights_count = insights_after - insights_before
+        print("AI INSIGHTS CREATED:", insights_count)
         
         # Done
-        db.documents.update_one({"id": doc_id}, {"$set": {"status": "processed"}})
+        db.documents.update_one({"id": doc_id}, {"$set": {"status": "completed"}})
+        print("DOCUMENT PROCESSING COMPLETE")
+        print("="*60 + "\n")
+        logger.info(f"Pipeline completed successfully for document_id={doc_id}")
         
     except Exception as e:
+        error_msg = str(e) if str(e) else "Processing error occurred."
         db.documents.update_one({"id": doc_id}, {"$set": {
             "status": "failed",
-            "error_message": f"Processing error: {str(e)}"
+            "error_message": error_msg
         }})
-        print(f"Pipeline error: {e}")
+        print("PIPELINE EXCEPTION:", repr(e))
+        traceback.print_exc()
+        logger.error(f"Pipeline error for document_id={doc_id}: {e}\n{traceback.format_exc()}")
+
 
 
 @router.post("/process-document")
