@@ -1,0 +1,32 @@
+# Environment variables & secrets
+.env
+*.env
+backend/.env
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+.venv/
+venv/
+env/
+
+# Build outputs & logs
+dist/
+frontend/dist/
+*.log
+logs/
+
+# Python cache & database
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.db
+backend/uploads/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

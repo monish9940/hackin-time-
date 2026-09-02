@@ -1,0 +1,12 @@
+fastapi==0.103.2
+uvicorn
+pymongo
+passlib[bcrypt]
+bcrypt==3.2.2
+pyjwt
+python-multipart
+httpx
+reportlab
+python-dotenv
+pydantic<2.0.0
+email-validator
