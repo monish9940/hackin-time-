@@ -61,7 +61,6 @@ async def process_document_pipeline(document_id: Union[int, str], db, user_email
             return
 
         print("EXTRACTED TEXT LENGTH:", len(extracted_text))
-        print("EXTRACTED TEXT PREVIEW:", extracted_text[:300].replace("\n", " "))
         
         db.documents.update_one({"id": doc_id}, {"$set": {
             "extracted_text": extracted_text,

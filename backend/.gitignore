@@ -1,5 +1,19 @@
+# Environment variables & secrets
 .env
+*.env
+*.env.local
+
+# Storage & Uploads
+uploads/
+
+# Python cache & database
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.pytest_cache/
 *.db
-uploads/
+
+# Logs & temporary files
+*.log
+logs/

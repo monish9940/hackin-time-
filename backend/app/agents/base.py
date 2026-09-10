@@ -6,8 +6,9 @@ from app.config import settings
 class BaseAgent:
     def __init__(self, agent_name: str):
         self.agent_name = agent_name
-        self.ollama_url = f"{settings.OLLAMA_BASE_URL}/api/generate"
+        self.ollama_url = f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/generate"
         self.model = settings.OLLAMA_MODEL
+
 
     async def call_llm(self, prompt: str, fallback_logic: callable = None, **kwargs) -> Dict[str, Any]:
         """

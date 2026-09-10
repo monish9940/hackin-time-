@@ -22,3 +22,6 @@ api_router.include_router(ai_router, prefix="/ai", tags=["ai"])
 api_router.include_router(audit_router, prefix="/audit", tags=["audit"])
 api_router.include_router(export_router, prefix="/export", tags=["export"])
 
+@api_router.get("/health")
+def api_health_check():
+    return {"status": "ok", "service": "CareBridge AI API"}
