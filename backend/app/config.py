@@ -25,6 +25,7 @@ class Settings:
         "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "https://hackin-time-w27p.vercel.app",
     ]
     _raw_cors: str = os.getenv("CORS_ORIGINS", "")
     _parsed_cors = [origin.strip() for origin in _raw_cors.split(",") if origin.strip()]
